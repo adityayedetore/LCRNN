@@ -12,6 +12,8 @@ import sys
 import numpy as np
 import random
 
+# idea credit: https://discuss.pytorch.org/t/locally-connected-layers/26979
+
 class LocallyConnected2d(nn.Module):
     def __init__(self, in_channels, out_channels, output_size, kernel_size, stride, bias=False):
         super(LocallyConnected2d, self).__init__()
