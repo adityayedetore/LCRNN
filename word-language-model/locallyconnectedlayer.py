@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# idea credit: https://discuss.pytorch.org/t/locally-connected-layers/26979
-
 class LocallyConnectedLayer1d(nn.Module):
     def __init__(self, input_dim, output_dim, kernel_size, stride, padding=True, bias=False):
       """
@@ -13,7 +11,7 @@ class LocallyConnectedLayer1d(nn.Module):
       input_dim: column size of weight matrix
       output_dim: row size of weight matrix
       kernel_size: number of local connections per parameter
-      stride: number of strides of local connections
+      stride: number of strides of local connections, CANNOT BE ZERO
       padding: whether or not to zero pad
       bias: whether or not to have a bias term
       """
@@ -46,17 +44,11 @@ class LocallyConnectedLayer1d(nn.Module):
         self.extra_dim = output_dim - resulting_dim
         self.pad = False
 
-
     def forward(self, x):
       k = self.kernel_size
       s = self.stride
 
-      # If the length of input vector is more than one, it is a batch
-      # Which means that the instance dim has to be 1, not 0
-      if len(x.size()) > 1:
-        instance_dim = 1
-      else:
-        instance_dim = 0
+      instance_dim = len(x.size())-1
 
       # Executes padding strategy to resize input vector x for matrix multiplication shortcut
       if self.pad:
