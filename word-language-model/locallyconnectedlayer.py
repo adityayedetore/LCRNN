@@ -19,12 +19,14 @@ class LocallyConnectedLayer1d(nn.Module):
       # Goal is to create sparse locally connected weight matrix size output_dim x input_dim
       # Instead of doing that, dense matrix of size output_dim x kernel_size is equivalent
       # Given special operation substitute for matrix multiplication
+      initrange = 0.1
       self.weight = nn.Parameter(
-          torch.randn(output_dim, kernel_size)
+          torch.empty(output_dim, kernel_size)
       )
+      torch.nn.init.uniform_(self.weight, -initrange, initrange)
       if bias:
           self.bias = nn.Parameter(
-              torch.randn(output_dim)
+              torch.zeros(output_dim)
           )
       else:
           self.register_parameter('bias', None)

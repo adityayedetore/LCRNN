@@ -51,14 +51,16 @@ parser.add_argument('--dropout', type=float, default=0.2,
                     help='dropout applied to layers (0 = no dropout)')
 parser.add_argument('--tied', action='store_true',
                     help='tie the word embedding and softmax weights')
-parser.add_argument('--lcrnn', action='store_true',
-                    help='use locally connected layers')
+parser.add_argument('--lcrnn', type=str, default='none',
+                    help='type of locally connected layers(none, inside, outside, both)')
 parser.add_argument('--lc_kernel_size', type=int, default=100, 
                     help='kernel size for the locally connected layers')
 parser.add_argument('--lc_n_layers', type=int, default=10, 
                     help='number of locally connected layers')
 parser.add_argument('--lc_activation', type=str, default="Sigmoid", 
                     help='activation function of the locally connected layers (Sigmoid, ReLU, Tanh, Identity)')
+parser.add_argument('--lc_conv', action='store_true',
+                    help='use a convolutional layer in the lcrnn')
 parser.add_argument('--seed', type=int, default=1111,
                     help='random seed')
 parser.add_argument('--cuda', action='store_true',
@@ -184,7 +186,7 @@ logging.info("Building the model")
 
 if not args.test:
     ntokens = len(corpus.dictionary)
-    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied, args.lcrnn, args.lc_kernel_size, args.lc_n_layers, args.lc_activation)
+    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied, args.lcrnn, args.lc_kernel_size, args.lc_n_layers, args.lc_activation, args.lc_conv)
     if args.cuda:
         if (not args.single) and (torch.cuda.device_count() > 1):
             # Scatters minibatches (in dim=1) across available GPUs

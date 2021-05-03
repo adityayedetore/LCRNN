@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from typing import List
 from collections import OrderedDict
 
+from locallyconnectedlayer import LocallyConnectedLayer1d
+
 class LocallyConnectedMLP(nn.Module):
     def __init__(self, 
                  n_layers: int, 
@@ -46,7 +48,7 @@ class LocallyConnectedMLP(nn.Module):
         if kernel_size[0] % 2 == 0:
           kernel_size[0]-=1
         p = kernel_size[0] // 2
-        lcstack.append((conv_name, nn.Conv1d(input_dim[0], output_dim[0], kernel_size[0], stride[0], p)))
+        lcstack.append((conv_name, nn.Conv1d(1, output_dim[0], kernel_size[0], stride[0], p)))
         i = 1
       
       for j in range(i,n_layers-1):
