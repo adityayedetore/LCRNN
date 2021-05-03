@@ -11,7 +11,8 @@ class LocallyConnectedMLP(nn.Module):
                  input_dim: List[int], 
                  output_dim: List[int], 
                  kernel_size: List[int], 
-                 stride: List[int], 
+                 stride: List[int],
+                 conv: bool = False,
                  padding: bool = True, 
                  bias: bool = True):
       """
@@ -22,6 +23,10 @@ class LocallyConnectedMLP(nn.Module):
       careful about not making kernel size too small or too large, and need to 
       visualize what the network will look like, making sure that stride doesn't
       make most of the nodes in the layer not connected to anything.
+      There is an option to add a convolution layer before the locally connected
+      layers, a method employed by a few reference papers to smooth any location
+      information.
+      NOTE: if conv is True, then n_layers includes conv layer.
 
       Example call:
       model = LocallyConnectedMLP(n_layers = 4, 
@@ -34,7 +39,7 @@ class LocallyConnectedMLP(nn.Module):
       super(LocallyConnectedMLP, self).__init__()
 
       lcstack = []
-      
+
       i=0
       if conv:
         conv_name = 'conv1'
