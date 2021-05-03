@@ -1,4 +1,5 @@
 import argparse
+import logging
 import time
 import math
 import torch
@@ -50,12 +51,22 @@ parser.add_argument('--dropout', type=float, default=0.2,
                     help='dropout applied to layers (0 = no dropout)')
 parser.add_argument('--tied', action='store_true',
                     help='tie the word embedding and softmax weights')
+parser.add_argument('--lcrnn', action='store_true',
+                    help='use locally connected layers')
+parser.add_argument('--lc_kernel_size', type=int, default=100, 
+                    help='kernel size for the locally connected layers')
+parser.add_argument('--lc_n_layers', type=int, default=10, 
+                    help='number of locally connected layers')
+parser.add_argument('--lc_activation', type=str, default="Sigmoid", 
+                    help='activation function of the locally connected layers (Sigmoid, ReLU, Tanh, Identity)')
 parser.add_argument('--seed', type=int, default=1111,
                     help='random seed')
 parser.add_argument('--cuda', action='store_true',
                     help='use CUDA')
 parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                     help='report interval')
+parser.add_argument('--log', type=str, default='log.txt', 
+                    help='path to logging file')
 parser.add_argument('--save', type=str,  default='model.pt',
                     help='path to save the final model')
 parser.add_argument('--single', action='store_true',
@@ -84,6 +95,10 @@ parser.add_argument('--testfname', type=str, default='test.txt',
                     help='name of the test file')
 args = parser.parse_args()
 
+logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(),
+                                                      logging.FileHandler(args.log)])
+logging.info(args)
+
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
 if torch.cuda.is_available():
@@ -96,6 +111,9 @@ if torch.cuda.is_available():
 ###############################################################################
 # Load data
 ###############################################################################
+
+logging.info("Loading data")
+start = time.time()
 
 # Starting from sequential data, batchify arranges the dataset into columns.
 # For instance, with the alphabet as the sequence and batch size 4, we'd get
@@ -139,6 +157,10 @@ corpus = data.SentenceCorpus(args.lm_data, args.ccg_data, args.save_lm_data, arg
                              validfname=args.validfname,
                              testfname=args.testfname)
 
+logging.info("( %.2f )" % (time.time() - start))
+ntokens = len(corpus.dictionary)
+logging.info("Vocab size %d", ntokens)
+
 if args.test:
     test_lm_sentences, test_lm_data = corpus.test_lm
     if args.ccg_data:
@@ -158,9 +180,11 @@ else:
 # Build/load the model
 ###############################################################################
 
+logging.info("Building the model")
+
 if not args.test:
     ntokens = len(corpus.dictionary)
-    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied)
+    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied, args.lcrnn, args.lc_kernel_size, args.lc_n_layers, args.lc_activation)
     if args.cuda:
         if (not args.single) and (torch.cuda.device_count() > 1):
             # Scatters minibatches (in dim=1) across available GPUs
@@ -278,15 +302,15 @@ def repackage_hidden(h):
 # by the batchify function. The chunks are along dimension 0, corresponding
 # to the seq_len dimension in the LSTM.
     
-def test_get_batch(source, evaluation=False):
+def test_get_batch(source):
     if isinstance(source, tuple):
         seq_len = len(source[0]) - 1
-        data = Variable(source[0][:seq_len], volatile=evaluation)
-        target = Variable(source[1][:seq_len], volatile=evaluation)
+        data = Variable(source[0][:seq_len])
+        target = Variable(source[1][:seq_len])
         
     else:
         seq_len = len(source) - 1
-        data = Variable(source[:seq_len], volatile=evaluation)
+        data = Variable(source[:seq_len])
         target = Variable(source[1:1+seq_len].view(-1))
     # This is where data should be CUDA-fied to lessen OOM errors
     if args.cuda:
@@ -294,14 +318,14 @@ def test_get_batch(source, evaluation=False):
     else:
         return data, target
     
-def get_batch(source, i, evaluation=False):
+def get_batch(source, i):
     if isinstance(source, tuple):
         seq_len = min(args.bptt, len(source[0]) - 1 - i)
-        data = Variable(source[0][i:i+seq_len], volatile=evaluation)
+        data = Variable(source[0][i:i+seq_len])
         target = Variable(source[1][i:i+seq_len].view(-1))
     else:
         seq_len = min(args.bptt, len(source) - 1 - i)
-        data = Variable(source[i:i+seq_len], volatile=evaluation)
+        data = Variable(source[i:i+seq_len])
         target = Variable(source[i+1:i+1+seq_len].view(-1))
     #This is where data should be CUDA-fied to lessen OOM errors
     if args.cuda:
@@ -315,48 +339,50 @@ def test_evaluate(test_lm_sentences, test_ccg_sentences, lm_data_source, ccg_dat
     model.eval()
     total_loss = 0.
     ntokens = len(corpus.dictionary)
-    if args.words:
-        print('word sentid sentpos wlen surp entropy')#,end='')
-        if args.guess:
-            for i in range(args.guessn):
-                print(' guess'+str(i))#,end='')
-                if args.guessscores:
-                    print(' gscore'+str(i))#,end='')
-        sys.stdout.write('\n')
-    bar = Bar('Processing', max=len(lm_data_source)+len(ccg_data_source))
-    for i in range(len(lm_data_source)+len(ccg_data_source)):
-        if i >= len(lm_data_source):
-            sent_ids = ccg_data_source[i-len(lm_data_source)]
-            sent = test_ccg_sentences[i-len(lm_data_source)]
-        else:
-            sent_ids = lm_data_source[i]
-            sent = test_lm_sentences[i]
-        if args.cuda:
-            sent_ids = sent_ids.cuda()
-        if (not args.single) and (torch.cuda.device_count() > 1):
-            # "module" is necessary when using DataParallel
-            hidden = model.module.init_hidden(1) # number of parallel sentences being processed
-        else:
-            hidden = model.init_hidden(1) # number of parallel sentences being processed
-        data, targets = test_get_batch(sent_ids, evaluation=True)
-        data=data.unsqueeze(1) # only needed if there is just a single sentence being processed
-        output, hidden = model(data, hidden)
-        output_flat = output.view(-1, ntokens)
-        curr_loss = criterion(output_flat, targets).item()
-        #curr_loss = len(data) * criterion(output_flat, targets).data # needed if there is more than a single sentence being processed
-        total_loss += curr_loss
+    with torch.no_grad():
         if args.words:
-            # output word-level complexity metrics
+            print('word sentid sentpos wlen surp entropy')#,end='')
+            if args.guess:
+                for i in range(args.guessn):
+                    print(' guess'+str(i))#,end='')
+                    if args.guessscores:
+                        print(' gscore'+str(i))#,end='')
+            sys.stdout.write('\n')
+        bar = Bar('Processing', max=len(lm_data_source)+len(ccg_data_source))
+        for i in range(len(lm_data_source)+len(ccg_data_source)):
             if i >= len(lm_data_source):
-                get_complexity_apply(output_flat,targets,i-len(lm_data_source),tags=True)
+                sent_ids = ccg_data_source[i-len(lm_data_source)]
+                sent = test_ccg_sentences[i-len(lm_data_source)]
             else:
-                get_complexity_apply(output_flat,targets,i)
-        else:
-            # output sentence-level loss
-            print(str(sent)+":"+str(curr_loss[0]))
-        hidden = repackage_hidden(hidden)
-        bar.next()
-    bar.finish()
+                sent_ids = lm_data_source[i]
+                sent = test_lm_sentences[i]
+            if args.cuda:
+                sent_ids = sent_ids.cuda()
+            if (not args.single) and (torch.cuda.device_count() > 1):
+                # "module" is necessary when using DataParallel
+                hidden = model.module.init_hidden(1) # number of parallel sentences being processed
+            else:
+                hidden = model.init_hidden(1) # number of parallel sentences being processed
+            data, targets = test_get_batch(sent_ids)
+            data=data.unsqueeze(1) # only needed if there is just a single sentence being processed
+            output, hidden = model(data, hidden)
+            output_flat = output.view(-1, ntokens)
+            curr_loss = criterion(output_flat, targets).item()
+            #curr_loss = len(data) * criterion(output_flat, targets).data # needed if there is more than a single sentence being processed
+            total_loss += curr_loss
+            if args.words:
+                # output word-level complexity metrics
+                if i >= len(lm_data_source):
+                    get_complexity_apply(output_flat,targets,i-len(lm_data_source),tags=True)
+                else:
+                    get_complexity_apply(output_flat,targets,i)
+            else:
+                # output sentence-level loss
+                print(str(sent)+":"+str(curr_loss[0]))
+            hidden = repackage_hidden(hidden)
+            bar.next()
+        bar.finish()
+
     return total_loss / (len(lm_data_source)+len(ccg_data_source))
 
 def evaluate(lm_data_source, ccg_data_source):
@@ -364,26 +390,28 @@ def evaluate(lm_data_source, ccg_data_source):
     model.eval()
     total_loss = 0
     ntokens = len(corpus.dictionary)
-    if (not args.single) and (torch.cuda.device_count() > 1):
-        #"module" is necessary when using DataParallel
-        hidden = model.module.init_hidden(eval_batch_size)
-    else:
-        hidden = model.init_hidden(eval_batch_size)
-    for i in range(0, lm_data_source.size(0) + ccg_data_source.size(0) - 1, args.bptt):
-        # TAG
-        if i > lm_data_source.size(0):
-            data, targets = get_batch(ccg_data_source, i - lm_data_source.size(0), evaluation=True)
-        # LM
+    with torch.no_grad():
+        if (not args.single) and (torch.cuda.device_count() > 1):
+            #"module" is necessary when using DataParallel
+            hidden = model.module.init_hidden(eval_batch_size)
         else:
-            data, targets = get_batch(lm_data_source, i, evaluation=True)
-        output, hidden = model(data, hidden)
-        output_flat = output.view(-1, ntokens)
-        curr_loss = len(data) * criterion(output_flat, targets).data
-        total_loss += curr_loss
-        hidden = repackage_hidden(hidden)
-    if len(ccg_data_source) == 0:
-        return total_loss / len(lm_data_source)
-    return total_loss[0] / (len(lm_data_source)+len(ccg_data_source))
+            hidden = model.init_hidden(eval_batch_size)
+        for i in range(0, lm_data_source.size(0) + ccg_data_source.size(0) - 1, args.bptt):
+            # TAG
+            if i > lm_data_source.size(0):
+                data, targets = get_batch(ccg_data_source, i - lm_data_source.size(0))
+            # LM
+            else:
+                data, targets = get_batch(lm_data_source, i)
+            output, hidden = model(data, hidden)
+            output_flat = output.view(-1, ntokens)
+            curr_loss = len(data) * criterion(output_flat, targets).data
+            total_loss += curr_loss
+            hidden = repackage_hidden(hidden)
+        if len(ccg_data_source) == 0:
+            return total_loss / len(lm_data_source)
+
+    return total_loss / (len(lm_data_source)+len(ccg_data_source))
 
 
 def train():
@@ -399,9 +427,9 @@ def train():
         hidden = model.init_hidden(args.batch_size)
     # UNCOMMENT FOR DEBUGGING
     #random.seed(10)
-    order = list(enumerate(range(0, train_lm_data.size(0) + train_ccg_data.size(0) - 1, args.bptt)))
+    order = list(range(0, train_lm_data.size(0) + train_ccg_data.size(0) - 1, args.bptt))
     random.shuffle(order)
-    for batch, i in order:#enumerate(range(0, train_lm_data.size(0) + train_ccg_data.size(0) - 1, args.bptt)):
+    for batch, i in enumerate(order):#enumerate(range(0, train_lm_data.size(0) + train_ccg_data.size(0) - 1, args.bptt)):
         # TAG
         if i > train_lm_data.size(0):
             data, targets = get_batch(train_ccg_data, i - train_lm_data.size(0))
@@ -420,16 +448,17 @@ def train():
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         for p in model.parameters():
-            p.data.add_(-lr, p.grad.data)
+            if p.requires_grad:
+                p.data.add_(-lr, p.grad.data)
 
         total_loss += loss.item()#data
 
         if batch % args.log_interval == 0 and batch > 0:
-            cur_loss = total_loss[0] / args.log_interval
+            cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
-            print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_lm_data)+len(train_ccg_data) // args.bptt, lr,
+                epoch, batch, (len(train_lm_data)+len(train_ccg_data)) // args.bptt, lr,
                 elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
@@ -445,11 +474,11 @@ if not args.test:
             epoch_start_time = time.time()
             train()
             val_loss = evaluate(val_lm_data, val_ccg_data)
-            print('-' * 89)
-            print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+            logging.info('-' * 89)
+            logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
                   'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                              val_loss, math.exp(val_loss)))
-            print('-' * 89)
+            logging.info('-' * 89)
             # Save the model if the validation loss is the best we've seen so far.
             if not best_val_loss or val_loss < best_val_loss:
                 with open(args.save, 'wb') as f:
@@ -459,8 +488,8 @@ if not args.test:
                 # Anneal the learning rate if no improvement has been seen in the validation dataset.
                 lr /= 4.0
     except KeyboardInterrupt:
-        print('-' * 89)
-        print('Exiting from training early')
+        logging.info('-' * 89)
+        logging.info('Exiting from training early')
 else:
     # Load the best saved model.
     with open(args.save, 'rb') as f:
@@ -469,7 +498,7 @@ else:
 
     # Run on test data.
     test_loss = test_evaluate(test_lm_sentences, test_ccg_sentences ,test_lm_data, test_ccg_data)
-    print('=' * 89)
-    print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
+    logging.info('=' * 89)
+    logging.info('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
         test_loss, math.exp(test_loss)))
-    print('=' * 89)
+    logging.info('=' * 89)
