@@ -34,8 +34,17 @@ class LocallyConnectedMLP(nn.Module):
       super(LocallyConnectedMLP, self).__init__()
 
       lcstack = []
-      lcstack.append(('first', nn.Linear(2,10)))
-      for j in range(n_layers-1):
+      
+      i=0
+      if conv:
+        conv_name = 'conv1'
+        if kernel_size[0] % 2 == 0:
+          kernel_size[0]-=1
+        p = kernel_size[0] // 2
+        lcstack.append((conv_name, nn.Conv1d(input_dim[0], output_dim[0], kernel_size[0], stride[0], p)))
+        i = 1
+      
+      for j in range(i,n_layers-1):
         args = []
         for arg in [input_dim, output_dim, kernel_size, stride]:
             args.append(arg[j])
@@ -44,6 +53,7 @@ class LocallyConnectedMLP(nn.Module):
         lcstack.append((layer_name,lc))
         activation_name = 'activation' + str(j+1)
         lcstack.append((activation_name, activation_fn))
+
       # final layer
       lc = LocallyConnectedLayer1d(input_dim[j+1], output_dim[j+1], kernel_size[j+1], stride[j+1], padding, bias)
       layer_name = 'locallyconnected' + str(j+2)
