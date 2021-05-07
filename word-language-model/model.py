@@ -10,6 +10,7 @@ class RNNModel(nn.Module):
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, lcrnn="none", lc_kernel_size=100, lc_n_layers=10, lc_activation="Sigmoid", lc_conv=False):
         super(RNNModel, self).__init__()
+        self.conv = lc_conv
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
         if rnn_type in ['customLSTM']:
@@ -34,31 +35,32 @@ class RNNModel(nn.Module):
             if lcrnn == 'inside' or lcrnn == 'both':
                 activation = getattr(nn, lc_activation)()
                 self.LCLs_inside = LocallyConnectedMLP(n_layers=lc_n_layers,
-                                                                     activation_fn=activation,
-                                                                     input_dim=[
-                                                                         nhid] * lc_n_layers,
-                                                                     output_dim=[
-                                                                         nhid] * lc_n_layers,
-                                                                     kernel_size=[
-                                                                         lc_kernel_size] * lc_n_layers,
-                                                                     stride=[1] * lc_n_layers,
-                                                                     conv=lc_conv)
+                                                       activation_fn=activation,
+                                                       input_dim=[
+                                                           nhid] * lc_n_layers,
+                                                       output_dim=[
+                                                           nhid] * lc_n_layers,
+                                                       kernel_size=[
+                                                           lc_kernel_size] * lc_n_layers,
+                                                       stride=[1] *
+                                                       lc_n_layers,
+                                                       conv=lc_conv)
             if lcrnn == 'outside' or lcrnn == 'both':
                 activation = getattr(nn, lc_activation)()
                 self.LCLs_outside = LocallyConnectedMLP(n_layers=lc_n_layers,
-                                                                     activation_fn=activation,
-                                                                     input_dim=[
-                                                                         nhid] * lc_n_layers,
-                                                                     output_dim=[
-                                                                         nhid] * lc_n_layers,
-                                                                     kernel_size=[
-                                                                         lc_kernel_size] * lc_n_layers,
-                                                                     stride=[1] * lc_n_layers,
-                                                                     conv=lc_conv)
+                                                        activation_fn=activation,
+                                                        input_dim=[
+                                                            nhid] * lc_n_layers,
+                                                        output_dim=[
+                                                            nhid] * lc_n_layers,
+                                                        kernel_size=[
+                                                            lc_kernel_size] * lc_n_layers,
+                                                        stride=[1] *
+                                                        lc_n_layers,
+                                                        conv=lc_conv)
         else:
             raise ValueError("""An invalid option for `--lcrnn` was supplied,
                              options are ['none', 'inside', 'outside' or 'both']""")
-
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -86,14 +88,17 @@ class RNNModel(nn.Module):
         # The locally connected weights are initialized in the LocallyConnectedLayer1D class
 
     def forward(self, input, hidden):
+        # test - evaluate emb = self.encoder(input)
         emb = self.drop(self.encoder(input))
-        if self.lcrnn == 'inside' or self.lcrnn == 'both': 
+        if self.lcrnn == 'inside' or self.lcrnn == 'both':
             hidden = self.LCLs_inside(hidden)
         output, hidden = self.rnn(emb, hidden)
         output = self.drop(output)
-        if self.lcrnn == 'outside' or self.lcrnn == 'both': 
+        if self.lcrnn == 'outside' or self.lcrnn == 'both':
             output = self.LCLs_outside(output)
-        decoded = self.decoder(output.view(output.size(0)*output.size(1), output.size(2)))
+
+        decoded = self.decoder(output.view(
+            output.size(0)*output.size(1), output.size(2)))
         return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden
 
     def init_hidden(self, bsz):
