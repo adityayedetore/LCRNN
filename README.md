@@ -7,11 +7,11 @@ R. Marvin and T. Linzen. 2018. Targeted Syntactic Evaluation of Language Models.
 
 ### Locally Connected Layers
 
-Our implementation of Locally Connected Layers lives in `LCRNN/word-language-model/`. For documentation of the locally connected layers, see [LCRNN/locallyconnectedlayer.ipynb](https://github.com/adityayedetore/LCRNN/blob/master/locallyconnectedlayer.ipynb). 
+Our implementation of Locally Connected Layers lives in `LCRNN/word-language-model/`. For documentation of the locally connected layers, see `LCRNN/locallyconnectedlayer.ipynb`. 
 
 ### Detailed Syntactic Evaluation 
 
-We provide the iPython Notebook [ModelEval.ipynb](https://github.com/adityayedetore/LCRNN/blob/master/ModelEval.ipynb) for ease of evaluation. 
+We provide the iPython Notebook `ModelEval.ipynb` for ease of evaluation. 
 
 ## HOW TO USE THIS CODE
 
