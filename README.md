@@ -5,7 +5,15 @@ This code was forked from the [GitHub for the following paper:](https://github.c
 
 R. Marvin and T. Linzen. 2018. Targeted Syntactic Evaluation of Language Models. Proceedings of EMNLP.
 
-Our implementation of Locally Connected Layers lives in `LCRNN/word-language-model/`. 
+### Locally Connected Layers
+
+Our implementation of Locally Connected Layers lives in `LCRNN/word-language-model/`. For documentation of the locally connected layers, see `LCRNN/locallyconnectedlayer.ipynb`. 
+
+DETAILED SYNTACTIC EVALUATION:
+
+We provide the iPython Notebook `ModelEval.ipynb` for ease of evaluation. 
+
+The following is from the original README for this repo, but will be useful for getting this code up and running. 
 
 ## HOW TO USE THIS CODE
 
@@ -44,6 +52,4 @@ Multitask model:
 python main.py --test --lm_data data/lm_data
 ```
 
-MORE DETAILED SYNTACTIC EVALUATION:
 
-We provide the iPython Notebook `ModelEval.ipynb` for ease of evaluation. 
